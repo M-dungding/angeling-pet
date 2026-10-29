@@ -1,0 +1,9 @@
+# Artwork is fetched per user (see README "Artwork"); never commit it.
+assets/spritesheet.*
+assets/emotes/*
+!assets/emotes/.gitkeep
+
+# Build output
+build/
+*.app/
+.DS_Store

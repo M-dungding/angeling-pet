@@ -1,0 +1,116 @@
+# Angeling Pet
+
+A floating macOS desktop pet that reports what your [Claude Code](https://claude.com/claude-code) sessions are doing, in the spirit of the Codex desktop pet.
+
+Angeling, a little pink angel from Ragnarok Online, floats in a corner of your screen. It keeps a list of your Claude Code sessions in a speech bubble: what each one is working on, which ones need your input, and which ones have finished. It also animates and pops Ragnarok emotes as things happen.
+
+> เพ็ตลอยบนเดสก์ท็อป macOS ที่คอยรายงานสถานะงานของ Claude Code ทุก session (ทั้งแอป Claude desktop และ CLI) คลิกเพื่อไปที่ session นั้นได้ทันที
+
+## Features
+
+- **Activity bubble**: one row per session, showing its status (กำลังทำ / รอคุณ / ติดปัญหา / เสร็จแล้ว), what it is doing right now, the prompt, and the task-list progress.
+- **Finished tasks**: shown in green until you open or dismiss them, or for 30 minutes.
+- **Click to jump**:
+  - Click a row to open that session.
+  - Click Angeling to open the latest active session.
+  - Works for the Claude desktop app (via deep link), Terminal and iTerm2 (selects the right tab), and VS Code, Cursor and Windsurf (focuses the window for that folder).
+- **Hide**:
+  - Hover Angeling to reveal a button that hides or shows the bubble. A red badge shows the number of active sessions while it is hidden.
+  - Hide Angeling itself with ⌥⌘A or from the menu bar icon.
+  - Optionally pops back out when a session needs you.
+- **Choose what the bubble shows**: right-click a row, Angeling, or the menu bar icon to turn the prompt, the latest message and the task list on or off.
+- **Animations**: idle, running, reading, waiting, failed and waving, from the Codex pet sprite format. Drag Angeling and it runs along.
+- **Ragnarok emotes** (`/heh` `/lv` `/wah` `/omg` `/swt` `/slur`):
+
+  | Emote | When |
+  |---|---|
+  | `/heh` | A session gets a new task |
+  | `/lv` | A task finishes |
+  | `/wah` | A session needs your input (stays until you answer) |
+  | `/omg` | A tool fails |
+  | `/swt` | A session has been working for more than 5 minutes |
+  | `/slur` | Nothing to do for 10 minutes |
+
+## Requirements
+
+- macOS 13 or later
+- Xcode Command Line Tools (`swiftc`): `xcode-select --install`
+- `jq`: `brew install jq`
+- Claude Code
+- The **Angeling** pet installed in the Codex app, which puts its sprite sheet at `~/.codex/pets/angeling/spritesheet.webp`. Any Codex v2 sprite sheet works; see [Artwork](#artwork).
+
+## Install
+
+```bash
+git clone https://github.com/mobbenxd/angeling-pet.git
+cd angeling-pet
+./install.sh
+```
+
+`install.sh` does the following:
+
+1. Fetches the artwork into `assets/`.
+2. Builds `~/Applications/Angeling.app`.
+3. Copies the hook and artwork to `~/.claude/angeling-pet/`.
+4. Adds the hook to `~/.claude/settings.json`. It is safe to run again, and it saves a backup to `settings.json.angeling-backup` first.
+5. Sets Angeling to start at login. Pass `--no-login` to skip this.
+
+New Claude Code events are picked up immediately, with no restart needed.
+
+## Uninstall
+
+```bash
+./uninstall.sh           # remove app, login item and hooks
+./uninstall.sh --purge   # also delete ~/.claude/angeling-pet and preferences
+```
+
+## How it works
+
+```
+Claude Code hooks ──► hooks/angeling-hook.sh ──► ~/.claude/angeling-pet/state/<session>.json
+                                                              │  (polled every 0.5 s)
+                                                              ▼
+                                                   Angeling.app (src/main.swift)
+```
+
+- **The hook** runs for `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Notification`, `PermissionRequest`, `Stop`, `StopFailure`, `SubagentStop` and `SessionEnd`. It writes one small JSON file per session, recording:
+  - the state, the current activity and the prompt;
+  - the task list, read from the Claude desktop task list tool;
+  - where the session lives (desktop session id, terminal app, tty, or iTerm session id).
+  
+  Writes are locked per session, so parallel tool calls can't corrupt a file. It takes about 50–80 ms per event.
+- **The app** is a single-file AppKit program. It uses no network, has no dependencies, and runs as an accessory app, so it has no Dock icon.
+
+## Artwork
+
+The artwork is **not** included in this repository. It belongs to its owners: Ragnarok Online and Angeling are © Gravity Co., Ltd., and the sprite sheet comes from your own Codex pet. `scripts/fetch-assets.sh` fetches a personal copy:
+
+- **Sprite sheet**: copied from `~/.codex/pets/$ANGELING_CODEX_PET/spritesheet.webp` (default `angeling`). You can also drop any Codex v2 sheet at `assets/spritesheet.webp`: 1536×2288 pixels, 8 columns × 11 rows of 192×208 frames. The rows are idle, running-right, running-left, waving, jumping, failed, waiting, running, review, and two look-around rows.
+- **Emotes**: downloaded from the [iRO Wiki emote list](https://irowiki.org/wiki/Emotes).
+
+## Development
+
+```bash
+./scripts/build.sh            # rebuild ~/Applications/Angeling.app
+pkill -x Angeling; open ~/Applications/Angeling.app
+
+# Render the widget to a PNG without screen-recording permission:
+ANGELING_SNAPSHOT=/tmp/a.png ANGELING_EXPANDED=1 ~/Applications/Angeling.app/Contents/MacOS/Angeling
+#   ANGELING_HIDE_ACTIVITY=1   bubble hidden
+#   ANGELING_HOVER=1           show the hover button
+#   ANGELING_EMOTE=lv          force an emote
+```
+
+After editing the hook, copy it into place:
+
+```bash
+cp hooks/angeling-hook.sh ~/.claude/angeling-pet/hook.sh
+```
+
+## Contributing
+
+`main` is protected, so all changes go through pull requests. Fork the repository or create a branch, then open a PR.
+
+## License
+
+The code is released under the [MIT](LICENSE) license. The artwork is not covered by it; see [Artwork](#artwork).
