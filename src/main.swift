@@ -1307,6 +1307,7 @@ final class PetController: NSObject, NSMenuDelegate {
     var lastSlur = Date.distantPast
     let angeling: SpriteSheet
     var sheet: Sprite
+    var shownCharacter = PetController.characterChoice   // differs from the choice while the menu previews another
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
     var animName = "idle"
@@ -1834,6 +1835,7 @@ final class PetController: NSObject, NSMenuDelegate {
         m.addItem(withTitle: "ธีม", action: nil, keyEquivalent: "").submenu = themes
         if !bomberCharacters.isEmpty {
             let chars = NSMenu()
+            chars.delegate = self
             for (id, title) in [("angeling", "Angeling")] + bomberCharacters.map({ ($0.id, $0.name) }) {
                 let i = chars.addItem(withTitle: title, action: #selector(setCharacter(_:)), keyEquivalent: "")
                 i.target = self; i.representedObject = id; i.state = PetController.characterChoice == id ? .on : .off
@@ -1858,8 +1860,25 @@ final class PetController: NSObject, NSMenuDelegate {
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu === statusItem.menu else { return }
         menu.removeAllItems()
         for i in makeMenu(forStatusBar: true).items { i.menu?.removeItem(i); menu.addItem(i) }
+    }
+
+    // The ตัวละคร submenu: hovering a character shows it, leaving goes back to the saved one.
+    func menu(_ menu: NSMenu, willHighlight item: NSMenuItem?) {
+        guard menu !== statusItem.menu else { return }
+        showCharacter(item?.representedObject as? String ?? PetController.characterChoice)
+    }
+    func menuDidClose(_ menu: NSMenu) {
+        if menu !== statusItem.menu { showCharacter(PetController.characterChoice) }
+    }
+    func showCharacter(_ id: String) {
+        guard id != shownCharacter else { return }
+        shownCharacter = id
+        sheet = PetController.sprite(id, angeling: angeling)
+        frameIndex = 0   // characters differ in frame counts
+        showFrame()
     }
 
     @objc func menuOpenSession(_ sender: NSMenuItem) {
@@ -1897,7 +1916,7 @@ final class PetController: NSObject, NSMenuDelegate {
     @objc func setCharacter(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String else { return }
         d.set(id, forKey: "character")
-        sheet = PetController.sprite(id, angeling: angeling)
+        showCharacter(id)
         statusItem.button?.image = statusIcon()
         setOverride("waving", for: 1.2)
     }
