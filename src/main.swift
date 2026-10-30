@@ -153,6 +153,7 @@ struct Theme {
     let bubbleFill: NSColor, bubbleStroke: NSColor
     let text: NSColor, secondary: NSColor, project: NSColor, hover: NSColor
     let running: NSColor, done: NSColor, alert: NSColor, alarm: NSColor, gold: NSColor, line: NSColor, discord: NSColor
+    var glassTint: NSColor? = nil   // set = the bubble is real Liquid Glass in this tint
 
     static let classic = Theme(
         id: "classic", minimal: false,
@@ -179,6 +180,14 @@ struct Theme {
         text: hex(0xc0caf5), secondary: hex(0xa9b1d6), project: hex(0xc0caf5), hover: hex(0x292e42),
         running: hex(0x7aa2f7), done: hex(0x9ece6a), alert: hex(0xf7768e), alarm: hex(0xff9e64), gold: hex(0xe0af68),
         line: hex(0x73daca), discord: hex(0xbb9af7))
+    /// System colours, so the text follows macOS light / dark. bubbleFill is the pre-macOS 26 fallback
+    /// and the hide button's fill; the tint is a faint Angeling pink.
+    static let glass = Theme(
+        id: "glass", minimal: true, bubbleFill: NSColor.windowBackgroundColor.withAlphaComponent(0.72), bubbleStroke: .separatorColor,
+        text: .labelColor, secondary: .secondaryLabelColor, project: .labelColor, hover: hex(0xffffff, 0.14),
+        running: .systemBlue, done: .systemGreen, alert: .systemRed, alarm: .systemOrange, gold: .systemYellow,
+        line: .systemGreen, discord: .systemIndigo, glassTint: hex(0xff8fb8, 0.16))
+
     static let ragnarok = Theme(
         id: "ragnarok", minimal: false, bubbleFill: hex(0xf6f6f6), bubbleStroke: hex(0x7d8494),
         text: hex(0x000000), secondary: hex(0x5a5a5a), project: hex(0x000000), hover: hex(0xc9d9fb),
@@ -189,7 +198,7 @@ struct Theme {
 
     /// Menu choices in order: (setting value, menu title). "auto" follows macOS light / dark.
     static let choices = [("auto", "ตามระบบ (Minimal สว่าง / มืด)"), ("light", "Minimal สว่าง"), ("dark", "Minimal มืด"),
-                          ("tokyo", "Tokyo Night"), ("ragnarok", "Ragnarok"), ("classic", "Classic (ชมพู)")]
+                          ("glass", "Liquid Glass"), ("tokyo", "Tokyo Night"), ("ragnarok", "Ragnarok"), ("classic", "Classic (ชมพู)")]
 
     static func named(_ id: String) -> Theme {
         switch id {
@@ -197,6 +206,7 @@ struct Theme {
         case "dark": return dark
         case "tokyo": return tokyoNight
         case "ragnarok": return ragnarok
+        case "glass": return glass
         case "auto":
             return NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
         default: return classic
@@ -792,8 +802,35 @@ final class RowView: NSView {
     override func rightMouseDown(with e: NSEvent) { onRightClick?(e) }
 }
 
+// Swift 6.2 ships with the macOS 26 SDK; source builds on older tools keep the plain fallback.
+#if compiler(>=6.2)
+@available(macOS 26, *)
+final class GlassBackground: NSGlassEffectView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil } // clicks belong to the bubble
+}
+#endif
+
 final class BubbleView: NSView {
     var onClick: (() -> Void)?
+    /// Liquid Glass behind the rows (macOS 26+). The system shapes it, so it has no tail.
+    private var glass: NSView?
+    private var glassFrame: NSRect { NSRect(x: 0, y: tail, width: bounds.width, height: bounds.height - tail) }
+
+    func syncGlass() {
+        #if compiler(>=6.2)
+        guard #available(macOS 26, *) else { return }
+        glass?.removeFromSuperview()
+        glass = nil
+        guard let tint = theme.glassTint else { return }
+        let g = GlassBackground(frame: glassFrame)
+        g.cornerRadius = 16   // rows are 10 and inset 6, so the corners stay concentric
+        g.tintColor = tint
+        addSubview(g, positioned: .below, relativeTo: nil)
+        glass = g
+        #endif
+    }
+    override func setFrameSize(_ s: NSSize) { super.setFrameSize(s); glass?.frame = glassFrame }
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override func mouseDown(with e: NSEvent) {}
     override func mouseUp(with e: NSEvent) { onClick?() }
@@ -804,7 +841,7 @@ final class BubbleView: NSView {
 
     /// Lays the rows out top-to-bottom and returns the bubble size.
     func set(rows: [RowView], width: CGFloat) -> NSSize {
-        subviews.forEach { $0.removeFromSuperview() }
+        subviews.filter { $0 is RowView }.forEach { $0.removeFromSuperview() }
         let gap: CGFloat = 4
         let inner = rows.reduce(0) { $0 + $1.frame.height } + gap * CGFloat(max(0, rows.count - 1))
         let h = inner + pad * 2 + tail + titleBar
@@ -837,6 +874,7 @@ final class BubbleView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        guard glass == nil else { return }
         let body = NSRect(x: 1, y: tail, width: bounds.width - 2, height: bounds.height - tail - 1)
         if theme.ragnarok { drawRagnarokWindow(body); return }
         let path = outline(body, radius: theme.minimal ? 14 : 12, tailHalf: 8)
@@ -1203,6 +1241,7 @@ final class PetController: NSObject, NSMenuDelegate {
         let t = Theme.named(themeChoice)
         guard t.id != theme.id else { return }
         theme = t
+        bubble.syncGlass()
         badge.color = t.minimal ? t.alert : NSColor(calibratedRed: 0.9, green: 0.25, blue: 0.35, alpha: 1)
         lineBadge.color = t.line
         discordBadge.color = t.discord
